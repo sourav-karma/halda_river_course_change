@@ -1,0 +1,110 @@
+var region = ee.FeatureCollection('users/karmakersourav/halda_shp');
+//Map.addLayer(region);
+
+var gsw = ee.Image('JRC/GSW1_0/GlobalSurfaceWater');
+var clip = gsw.clip(region);
+var occurrence = clip.select('occurrence'); //occurrence
+var transition = clip.select('transition');
+Map.addLayer({
+  eeObject: transition,
+  name: 'Transition classes',
+});
+
+var area_image_with_transition_class = ee.Image.pixelArea().addBands(transition);
+
+// Export.image.toDrive({
+//   image: area_image_with_transition_class,
+//   description: 'classified_basin_with_lessPoint',
+//   scale: 30,
+//   region: geometry,
+//   fileFormat: 'GeoTIFF',
+//   formatOptions: {
+//   cloudOptimized: true
+// }
+// });
+
+
+var reduction_results = area_image_with_transition_class.reduceRegion({
+  reducer: ee.Reducer.sum().group({
+    groupField: 1,
+    groupName: 'transition_class_value',
+  }),
+  geometry: geometry,
+  scale: 30,
+  bestEffort: true,
+});
+print('reduction_results', reduction_results);
+
+
+//list of transition classes//  
+var roi_stats = ee.List(reduction_results.get('groups'));
+// Create a dictionary for looking up names of transition classes.
+var lookup_names = ee.Dictionary.fromLists(
+    ee.List(clip.get('transition_class_values')).map(ee.String),
+    clip.get('transition_class_names')
+);
+
+
+// Create a dictionary for looking up colors of transition classes.
+var lookup_palette = ee.Dictionary.fromLists(
+    ee.List(clip.get('transition_class_values')).map(ee.String),
+    clip.get('transition_class_palette')
+);
+
+
+// Create a feature for a transition class that includes the area covered.
+function createFeature(transition_class_stats) {
+  transition_class_stats = ee.Dictionary(transition_class_stats);
+  var class_number = transition_class_stats.get('transition_class_value');
+  var result = {
+      transition_class_number: class_number,
+      transition_class_name: lookup_names.get(class_number),
+      transition_class_palette: lookup_palette.get(class_number),
+      area_m2: transition_class_stats.get('sum')
+  };
+  return ee.Feature(null, result);   // Creates a feature without a geometry.
+}  
+
+
+//JSON dictionary that defines piechart colors of transition color/
+function createPieChartSliceDictionary(fc) {
+  return ee.List(fc.aggregate_array("transition_class_palette"))
+    .map(function(p) { return {'color': p}; }).getInfo();
+}
+
+
+//create feature function//
+var transition_fc = ee.FeatureCollection(roi_stats.map(createFeature));
+print('transition_fc', transition_fc);
+
+
+// Add a summary chart.
+var transition_summary_chart = ui.Chart.feature.byFeature({
+    features: transition_fc,
+    xProperty: 'transition_class_name',
+    yProperties: ['area_m2', 'transition_class_number']
+  })
+  .setChartType('BarChart')
+  .setOptions({
+    title: 'Summary of transition class areas',
+    slices: createPieChartSliceDictionary(transition_fc),
+    sliceVisibilityThreshold: 0  // Don't group small slices.
+  });
+print(transition_summary_chart);
+
+
+//change abs if possible
+var change = gsw.select("change_abs");
+var clp = change.clip(geometry);
+var VIS_CHANGE = {
+    min:-50,
+    max:50,
+    palette: ['red', 'black', 'limegreen']
+};
+
+
+Map.addLayer({
+  eeObject: clp,
+  visParams: VIS_CHANGE,
+  name: 'occurrence change intensity'
+});
