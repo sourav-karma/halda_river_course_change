@@ -1,0 +1,157 @@
+////first import halda basin shape files and training Landcover samples as GEE feature collection
+
+
+var landsat1 = ee.ImageCollection("LANDSAT/LC08/C01/T1_TOA")
+    .filterBounds(halda)
+    .filterDate('2019-01-01', '2019-05-30')
+    .sort('CLOUD_COVER')
+    .first();
+var landsat2 = ee.ImageCollection("LANDSAT/LC08/C01/T1_TOA")
+    .filterBounds(roi2)
+    .filterDate('2019-01-01', '2019-05-30')
+    .sort('CLOUD_COVER')
+    .first();
+var mosaic_1 = ee.ImageCollection.fromImages([landsat2, landsat1 ]).mosaic();
+
+
+var landsat2019 = mosaic_1.clip(halda);
+
+Map.addLayer(landsat2019, {bands: ['B4', 'B3', 'B2'], min: 0, max: 0.3, gamma: 1.4}, 'halda_2019');
+//Map.addLayer(halda);
+Map.centerObject(halda, 10);
+//Map.addLayer(halda, {}, "halda_basin");
+
+var landcover = vegetation.merge(water).merge(built_area).merge(agriculture);
+print(landcover);
+
+//trainig from mosaic
+//Select Bands from mosaic Image for training
+var bands = ['B2', 'B3', 'B4', 'B5', 'B7'];
+
+//Sample the input imagery to get a FeatureCollection of training data
+var training = landsat2019.select(bands).sampleRegions({
+  collection: landcover,
+  properties: ['landcover'],
+  scale: 30
+});
+//Train the classifier
+var classifier = ee.Classifier.cart().train({
+  features: training,
+  classProperty: 'landcover',
+  inputProperties: bands
+});
+
+//Classify the input imagery
+var classified2019 = landsat2019.select(bands).classify(classifier);
+//Define color palette
+var palette = [
+  '089509', // vegetation (0) // green {htmlcolorcodes.com}
+  '0e028b', //waterbody (1) // blue
+  'ff1302', //built area (2) // light orange
+  'f1ff5a' //agri
+];
+
+//Display the classified result 
+Map.addLayer(classified2019, {
+  min:0, max: 3, palette: palette}, 'LULC_2019');
+  
+var withRandom = training.randomColumn('random');
+
+//We want to reserve some of the data for testing, to avoid overfitting the model.
+var split = 0.7; //Roughly 70% training, 30% testing.
+var trainingPartition = withRandom.filter(ee.Filter.lt('random', split));
+var testingPartition = withRandom.filter(ee.Filter.gte('random', split));
+
+//Trained with 70% of our data.
+var trainedClassifier = ee.Classifier.gmoMaxEnt().train({
+  features: trainingPartition,
+  classProperty: 'landcover',
+  inputProperties: bands
+});
+
+//classify the test FeatureCollection.
+var test = testingPartition.classify(trainedClassifier);
+
+//Print the Confusion Matrix.
+var confusionMatrix_2019 = test.errorMatrix('landcover', 'classified'); //classproperty
+print('Confusion Matrix 2019', confusionMatrix_2019);
+
+
+//2001
+
+var landsat3 = ee.ImageCollection("LANDSAT/LE07/C01/T1_TOA")
+    .filterBounds(halda)
+    .filterDate('2001-01-01', '2001-05-30')
+    .sort('CLOUD_COVER')
+    .first();
+var landsat4 = ee.ImageCollection("LANDSAT/LE07/C01/T1_TOA")
+    .filterBounds(roi2)
+    .filterDate('2001-01-01', '2001-05-30')
+    .sort('CLOUD_COVER')
+    .first();
+var mosaic_2 = ee.ImageCollection.fromImages([landsat3, landsat4 ]).mosaic();
+
+
+var landsat2001 = mosaic_2.clip(halda);
+Map.addLayer(landsat2001, {bands: ['B4', 'B3', 'B2'], min: 0, max: 0.3, gamma: 1.4}, 'halda_2001');
+//Map.addLayer(halda);
+
+var landcover = vegetation.merge(water).merge(built_area).merge(agriculture);
+//print(landcover);
+
+//trainig from mosaic
+//Select Bands from mosaic Image for training
+var bands = ['B2', 'B3', 'B4', 'B5', 'B7'];
+
+//Sample the input imagery to get a FeatureCollection of training data
+var training = landsat2001.select(bands).sampleRegions({
+  collection: landcover,
+  properties: ['landcover'],
+  scale: 30
+});
+//Train the classifier
+var classifier = ee.Classifier.cart().train({
+  features: training,
+  classProperty: 'landcover',
+  inputProperties: bands
+});
+
+//Classify the input imagery
+var classified2001 = landsat2001.select(bands).classify(classifier);
+//Define color palette
+var palette = [
+  '089509', // vegetation (0) // green {htmlcolorcodes.com}
+  '0e028b', //waterbody (1) // blue
+  'ff1302', //built area (2) // light orange
+  'f1ff5a' //agri
+];
+
+//Display the classified result 
+Map.addLayer(classified2001, {
+  min:0, max: 3, palette: palette}, 'LULC_2001');
+  
+var withRandom = training.randomColumn('random');
+
+//We want to reserve some of the data for testing, to avoid overfitting the model.
+var split = 0.7; //Roughly 70% training, 30% testing.
+var trainingPartition = withRandom.filter(ee.Filter.lt('random', split));
+var testingPartition = withRandom.filter(ee.Filter.gte('random', split));
+
+//Trained with 70% of our data.
+var trainedClassifier = ee.Classifier.gmoMaxEnt().train({
+  features: trainingPartition,
+  classProperty: 'landcover',
+  inputProperties: bands
+});
+
+//classify the test FeatureCollection.
+var test = testingPartition.classify(trainedClassifier);
+
+//Print the Confusion Matrix.
+var confusionMatrix_2001 = test.errorMatrix('landcover', 'classified'); //classproperty
+print('Confusion Matrix 2001', confusionMatrix_2001);
+
+//Determine the Land Cover Change between 2001 and 2019
+var LULC_Change = landsat2019.subtract(landsat2001);
+Map.addLayer(LULC_Change.clip(halda), {
+  min:0, max:2, palette: ['green', 'red', 'yellow']}, 'LULC Change Between 2001 and 2019 Halda');
