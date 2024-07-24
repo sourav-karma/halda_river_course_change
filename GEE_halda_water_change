@@ -12,17 +12,6 @@ Map.addLayer({
 
 var area_image_with_transition_class = ee.Image.pixelArea().addBands(transition);
 
-// Export.image.toDrive({
-//   image: area_image_with_transition_class,
-//   description: 'classified_basin_with_lessPoint',
-//   scale: 30,
-//   region: geometry,
-//   fileFormat: 'GeoTIFF',
-//   formatOptions: {
-//   cloudOptimized: true
-// }
-// });
-
 
 var reduction_results = area_image_with_transition_class.reduceRegion({
   reducer: ee.Reducer.sum().group({
